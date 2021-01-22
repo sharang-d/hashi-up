@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/jsiebens/hashi-up/pkg/config"
 	"github.com/jsiebens/hashi-up/pkg/operator"
-	"github.com/markbates/pkger"
+	"github.com/jsiebens/hashi-up/scripts"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/thanhpk/randstr"
@@ -126,7 +126,7 @@ func InstallConsulCommand() *cobra.Command {
 				}
 			}
 
-			installScript, err := pkger.Open("/scripts/install_consul.sh")
+			installScript, err := scripts.Open("install_consul.sh")
 
 			if err != nil {
 				return err
