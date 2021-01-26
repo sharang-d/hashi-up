@@ -1,9 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -16,11 +13,21 @@ type BoundaryConfig struct {
 	WorkerAuthKey        string
 	RecoveryKey          string
 	ApiAddress           string
+	ApiKeyFile           string
+	ApiCertFile          string
 	ClusterAddress       string
+	ClusterKeyFile       string
+	ClusterCertFile      string
 	ProxyAddress         string
+	ProxyKeyFile         string
+	ProxyCertFile        string
 	PublicAddress        string
 	PublicClusterAddress string
 	Controllers          []string
+}
+
+func (c *BoundaryConfig) HasDatabaseURL() bool {
+	return len(c.DatabaseURL) != 0
 }
 
 func (c *BoundaryConfig) IsWorkerEnabled() bool {
@@ -29,6 +36,38 @@ func (c *BoundaryConfig) IsWorkerEnabled() bool {
 
 func (c *BoundaryConfig) IsControllerEnabled() bool {
 	return len(c.ControllerName) != 0
+}
+
+func (c *BoundaryConfig) HasAllRequiredControllerKeys() bool {
+	return len(c.RootKey) != 0 && len(c.WorkerAuthKey) != 0 && len(c.RecoveryKey) != 0
+}
+
+func (c *BoundaryConfig) HasAllRequiredWorkerKeys() bool {
+	return len(c.WorkerAuthKey) != 0
+}
+
+func (c *BoundaryConfig) HasValidApiTLSSettings() bool {
+	return allOrNothing(c.ApiKeyFile, c.ApiCertFile)
+}
+
+func (c *BoundaryConfig) HasValidProxyTLSSettings() bool {
+	return allOrNothing(c.ProxyKeyFile, c.ProxyCertFile)
+}
+
+func (c *BoundaryConfig) HasValidClusterTLSSettings() bool {
+	return allOrNothing(c.ClusterKeyFile, c.ClusterCertFile)
+}
+
+func (c *BoundaryConfig) ApiTLSEnabled() bool {
+	return len(c.ApiCertFile) != 0 && len(c.ApiKeyFile) != 0
+}
+
+func (c *BoundaryConfig) ProxyTLSEnabled() bool {
+	return len(c.ProxyCertFile) != 0 && len(c.ProxyKeyFile) != 0
+}
+
+func (c *BoundaryConfig) ClusterTLSEnabled() bool {
+	return len(c.ClusterCertFile) != 0 && len(c.ClusterKeyFile) != 0
 }
 
 func (c *BoundaryConfig) GenerateConfigFile() string {
@@ -61,21 +100,43 @@ func (c *BoundaryConfig) GenerateConfigFile() string {
 		apiAddressBlock := rootBody.AppendNewBlock("listener", []string{"tcp"})
 		apiAddressBlock.Body().SetAttributeValue("purpose", cty.StringVal("api"))
 		apiAddressBlock.Body().SetAttributeValue("address", cty.StringVal(c.ApiAddress))
-		apiAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+
+		if c.ApiTLSEnabled() {
+			apiAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(false))
+			apiAddressBlock.Body().SetAttributeValue("tls_cert_file", cty.StringVal(makeAbsolute(c.ApiCertFile, "/etc/boundary.d")))
+			apiAddressBlock.Body().SetAttributeValue("tls_key_file", cty.StringVal(makeAbsolute(c.ApiKeyFile, "/etc/boundary.d")))
+		} else {
+			apiAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+		}
 	}
 
 	if len(c.ControllerName) != 0 && len(c.ClusterAddress) != 0 {
-		apiAddressBlock := rootBody.AppendNewBlock("listener", []string{"tcp"})
-		apiAddressBlock.Body().SetAttributeValue("purpose", cty.StringVal("cluster"))
-		apiAddressBlock.Body().SetAttributeValue("address", cty.StringVal(c.ClusterAddress))
-		apiAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+		clusterAddressBlock := rootBody.AppendNewBlock("listener", []string{"tcp"})
+		clusterAddressBlock.Body().SetAttributeValue("purpose", cty.StringVal("cluster"))
+		clusterAddressBlock.Body().SetAttributeValue("address", cty.StringVal(c.ClusterAddress))
+		clusterAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+
+		if c.ClusterTLSEnabled() {
+			clusterAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(false))
+			clusterAddressBlock.Body().SetAttributeValue("tls_cert_file", cty.StringVal(makeAbsolute(c.ClusterCertFile, "/etc/boundary.d")))
+			clusterAddressBlock.Body().SetAttributeValue("tls_key_file", cty.StringVal(makeAbsolute(c.ClusterKeyFile, "/etc/boundary.d")))
+		} else {
+			clusterAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+		}
 	}
 
 	if len(c.WorkerName) != 0 && len(c.ProxyAddress) != 0 {
-		apiAddressBlock := rootBody.AppendNewBlock("listener", []string{"tcp"})
-		apiAddressBlock.Body().SetAttributeValue("purpose", cty.StringVal("proxy"))
-		apiAddressBlock.Body().SetAttributeValue("address", cty.StringVal(c.ProxyAddress))
-		apiAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+		proxyAddressBlock := rootBody.AppendNewBlock("listener", []string{"tcp"})
+		proxyAddressBlock.Body().SetAttributeValue("purpose", cty.StringVal("proxy"))
+		proxyAddressBlock.Body().SetAttributeValue("address", cty.StringVal(c.ProxyAddress))
+
+		if c.ProxyTLSEnabled() {
+			proxyAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(false))
+			proxyAddressBlock.Body().SetAttributeValue("tls_cert_file", cty.StringVal(makeAbsolute(c.ProxyCertFile, "/etc/boundary.d")))
+			proxyAddressBlock.Body().SetAttributeValue("tls_key_file", cty.StringVal(makeAbsolute(c.ProxyKeyFile, "/etc/boundary.d")))
+		} else {
+			proxyAddressBlock.Body().SetAttributeValue("tls_disable", cty.BoolVal(true))
+		}
 	}
 
 	if len(c.RootKey) != 0 {
@@ -105,10 +166,6 @@ func (c *BoundaryConfig) GenerateConfigFile() string {
 	return string(f.Bytes())
 }
 
-func generateKey() (string, error) {
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(key), nil
+func allOrNothing(a, b string) bool {
+	return (len(a) != 0 && len(b) != 0) || (len(a) == 0 && len(b) == 0)
 }

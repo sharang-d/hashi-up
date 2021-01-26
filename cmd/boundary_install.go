@@ -47,8 +47,14 @@ func InstallBoundaryCommand() *cobra.Command {
 	command.Flags().StringVar(&flags.WorkerAuthKey, "worker-auth-key", "", "Boundary: KMS key shared by the Controller and Worker in order to authenticate a Worker to the Controller.")
 	command.Flags().StringVar(&flags.RecoveryKey, "recovery-key", "", "Boundary: KMS key is used for rescue/recovery operations that can be used by a client to authenticate almost any operation within Boundary.")
 	command.Flags().StringVar(&flags.ApiAddress, "api-addr", "0.0.0.0", "Boundary: address for the API listener")
+	command.Flags().StringVar(&flags.ApiKeyFile, "api-key-file", "", "Boundary: specifies the path to the private key for the certificate.")
+	command.Flags().StringVar(&flags.ApiCertFile, "api-cert-file", "", "Boundary: specifies the path to the certificate for TLS.")
 	command.Flags().StringVar(&flags.ClusterAddress, "cluster-addr", "127.0.0.1", "Boundary: address for the Cluster listener")
+	command.Flags().StringVar(&flags.ClusterKeyFile, "cluster-key-file", "", "Boundary: specifies the path to the private key for the certificate.")
+	command.Flags().StringVar(&flags.ClusterCertFile, "cluster-cert-file", "", "Boundary: specifies the path to the certificate for TLS.")
 	command.Flags().StringVar(&flags.ProxyAddress, "proxy-addr", "0.0.0.0", "Boundary: address for the Proxy listener")
+	command.Flags().StringVar(&flags.ProxyKeyFile, "proxy-key-file", "", "Boundary: specifies the path to the private key for the certificate.")
+	command.Flags().StringVar(&flags.ProxyCertFile, "proxy-cert-file", "", "Boundary: specifies the path to the certificate for TLS.")
 	command.Flags().StringVar(&flags.PublicClusterAddress, "public-cluster-addr", "", "Boundary: specifies the public host or IP address (and optionally port) at which the controller can be reached by workers.")
 	command.Flags().StringVar(&flags.PublicAddress, "public-addr", "", "Boundary: specifies the public host or IP address (and optionally port) at which the worker can be reached by clients for proxying.")
 	command.Flags().StringArrayVar(&flags.Controllers, "controller", []string{"127.0.0.1"}, "Boundary: a list of hosts/IP addresses and optionally ports for reaching controllers.")
@@ -63,6 +69,35 @@ func InstallBoundaryCommand() *cobra.Command {
 		var generatedConfig string
 
 		if !ignoreConfigFlags {
+			if !(flags.IsControllerEnabled() || flags.IsWorkerEnabled()) {
+				return fmt.Errorf("a controller-name and/or a worker-name is required")
+			}
+
+			if flags.IsControllerEnabled() {
+				if !flags.HasDatabaseURL() {
+					return fmt.Errorf("a db-url is required when running a controller")
+				}
+				if !flags.HasAllRequiredControllerKeys() {
+					return fmt.Errorf("a root-key, a worker-auth-key and a recovery-key are required when running a controller")
+				}
+			}
+
+			if flags.IsWorkerEnabled() && !flags.HasAllRequiredWorkerKeys() {
+				return fmt.Errorf("a worker-auth-key are required when running a worker")
+			}
+
+			if !flags.HasValidApiTLSSettings() {
+				return fmt.Errorf("both api-key-file and api-cert-file are required to enable API TLS")
+			}
+
+			if !flags.HasValidClusterTLSSettings() {
+				return fmt.Errorf("both cluster-key-file and cluster-cert-file are required to enable cluster TLS")
+			}
+
+			if !flags.HasValidProxyTLSSettings() {
+				return fmt.Errorf("both proxy-key-file and proxy-cert-file are required to enable proxy TLS")
+			}
+
 			generatedConfig = flags.GenerateConfigFile()
 		}
 
@@ -99,6 +134,18 @@ func InstallBoundaryCommand() *cobra.Command {
 				err = op.Upload(strings.NewReader(generatedConfig), dir+"/config/boundary.hcl", "0640")
 				if err != nil {
 					return fmt.Errorf("error received during upload boundary configuration: %s", err)
+				}
+
+				files = []string{}
+
+				if flags.ApiTLSEnabled() {
+					files = []string{flags.ApiCertFile, flags.ApiKeyFile}
+				}
+				if flags.ClusterTLSEnabled() {
+					files = []string{flags.ClusterKeyFile, flags.ClusterCertFile}
+				}
+				if flags.ProxyTLSEnabled() {
+					files = []string{flags.ProxyKeyFile, flags.ProxyCertFile}
 				}
 			} else {
 				info(fmt.Sprintf("Uploading %s as boundary.hcl...", configFile))
