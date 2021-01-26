@@ -2,13 +2,15 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/jsiebens/hashi-up/pkg/config"
 	"github.com/jsiebens/hashi-up/pkg/operator"
 	"github.com/markbates/pkger"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/thanhpk/randstr"
-	"path/filepath"
 )
 
 func InstallBoundaryCommand() *cobra.Command {
@@ -22,6 +24,8 @@ func InstallBoundaryCommand() *cobra.Command {
 	var configFile string
 	var files []string
 
+	var flags = config.BoundaryConfig{}
+
 	var command = &cobra.Command{
 		Use:          "install",
 		SilenceUsage: true,
@@ -33,16 +37,33 @@ func InstallBoundaryCommand() *cobra.Command {
 	command.Flags().StringVarP(&version, "version", "v", "", "Version of Boundary to install")
 
 	command.Flags().BoolVarP(&initDatabase, "init-database", "d", false, "Initialize the Boundary database")
-	command.Flags().StringVarP(&configFile, "config-file", "c", "", "Custom Consul configuration file to upload")
+	command.Flags().StringVarP(&configFile, "config-file", "c", "", "Custom Boundary configuration file to upload")
 	command.Flags().StringArrayVarP(&files, "file", "f", []string{}, "Additional files, e.g. certificates, to upload")
+
+	command.Flags().StringVar(&flags.ControllerName, "controller-name", "", "Boundary: specifies a unique name of this controller within the Boundary controller cluster.")
+	command.Flags().StringVar(&flags.WorkerName, "worker-name", "", "Boundary: specifies a unique name of this worker within the Boundary worker cluster.")
+	command.Flags().StringVar(&flags.DatabaseURL, "db-url", "", "Boundary: configures the URL for connecting to Postgres")
+	command.Flags().StringVar(&flags.RootKey, "root-key", "", "Boundary: a KEK (Key Encrypting Key) for the scope-specific KEKs (also referred to as the scope's root key).")
+	command.Flags().StringVar(&flags.WorkerAuthKey, "worker-auth-key", "", "Boundary: KMS key shared by the Controller and Worker in order to authenticate a Worker to the Controller.")
+	command.Flags().StringVar(&flags.RecoveryKey, "recovery-key", "", "Boundary: KMS key is used for rescue/recovery operations that can be used by a client to authenticate almost any operation within Boundary.")
+	command.Flags().StringVar(&flags.ApiAddress, "api-addr", "0.0.0.0", "Boundary: address for the API listener")
+	command.Flags().StringVar(&flags.ClusterAddress, "cluster-addr", "127.0.0.1", "Boundary: address for the Cluster listener")
+	command.Flags().StringVar(&flags.ProxyAddress, "proxy-addr", "0.0.0.0", "Boundary: address for the Proxy listener")
+	command.Flags().StringVar(&flags.PublicClusterAddress, "public-cluster-addr", "", "Boundary: specifies the public host or IP address (and optionally port) at which the controller can be reached by workers.")
+	command.Flags().StringVar(&flags.PublicAddress, "public-addr", "", "Boundary: specifies the public host or IP address (and optionally port) at which the worker can be reached by clients for proxying.")
+	command.Flags().StringArrayVar(&flags.Controllers, "controller", []string{"127.0.0.1"}, "Boundary: a list of hosts/IP addresses and optionally ports for reaching controllers.")
 
 	command.RunE = func(command *cobra.Command, args []string) error {
 		if !runLocal && len(sshTargetAddr) == 0 {
 			return fmt.Errorf("required ssh-target-addr flag is missing")
 		}
 
-		if len(configFile) == 0 {
-			return fmt.Errorf("required config-file flag is missing")
+		ignoreConfigFlags := len(configFile) != 0
+
+		var generatedConfig string
+
+		if !ignoreConfigFlags {
+			generatedConfig = flags.GenerateConfigFile()
 		}
 
 		if len(binary) == 0 && len(version) == 0 {
@@ -73,10 +94,18 @@ func InstallBoundaryCommand() *cobra.Command {
 				}
 			}
 
-			info(fmt.Sprintf("Uploading %s as boundary.hcl...", configFile))
-			err = op.UploadFile(expandPath(configFile), dir+"/config/boundary.hcl", "0640")
-			if err != nil {
-				return fmt.Errorf("error received during upload boundary configuration: %s", err)
+			if !ignoreConfigFlags {
+				info("Uploading generated Boundary configuration...")
+				err = op.Upload(strings.NewReader(generatedConfig), dir+"/config/boundary.hcl", "0640")
+				if err != nil {
+					return fmt.Errorf("error received during upload boundary configuration: %s", err)
+				}
+			} else {
+				info(fmt.Sprintf("Uploading %s as boundary.hcl...", configFile))
+				err = op.UploadFile(expandPath(configFile), dir+"/config/boundary.hcl", "0640")
+				if err != nil {
+					return fmt.Errorf("error received during upload boundary configuration: %s", err)
+				}
 			}
 
 			for _, s := range files {
