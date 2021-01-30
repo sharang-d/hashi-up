@@ -112,7 +112,7 @@ func InstallBoundaryCommand() *cobra.Command {
 		}
 
 		callback := func(op operator.CommandOperator) error {
-			dir := "/tmp/boundary-installation." + randstr.String(6)
+			dir := "/tmp/hashi-up." + randstr.String(6)
 
 			defer op.Execute("rm -rf " + dir)
 
@@ -122,7 +122,7 @@ func InstallBoundaryCommand() *cobra.Command {
 			}
 
 			if len(binary) != 0 {
-				info("Uploading Boundary package...")
+				info("Uploading Boundary package ...")
 				err = op.UploadFile(binary, dir+"/boundary.zip", "0640")
 				if err != nil {
 					return fmt.Errorf("error received during upload Boundary package: %s", err)
@@ -130,7 +130,7 @@ func InstallBoundaryCommand() *cobra.Command {
 			}
 
 			if !ignoreConfigFlags {
-				info("Uploading generated Boundary configuration...")
+				info("Uploading generated Boundary configuration ...")
 				err = op.Upload(strings.NewReader(generatedConfig), dir+"/config/boundary.hcl", "0640")
 				if err != nil {
 					return fmt.Errorf("error received during upload boundary configuration: %s", err)
@@ -179,11 +179,13 @@ func InstallBoundaryCommand() *cobra.Command {
 				return fmt.Errorf("error received during upload install script: %s", err)
 			}
 
-			info("Installing Boundary...")
+			info("Installing Boundary ...")
 			_, err = op.Execute(fmt.Sprintf("cat %s/install.sh | TMP_DIR='%s' INIT_DATABASE='%t' BOUNDARY_VERSION='%s' SKIP_ENABLE='%t' SKIP_START='%t' sh -\n", dir, dir, initDatabase, version, skipEnable, skipStart))
 			if err != nil {
 				return fmt.Errorf("error received during installation: %s", err)
 			}
+
+			info("Done.")
 
 			return nil
 		}

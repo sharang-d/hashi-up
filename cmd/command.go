@@ -63,6 +63,7 @@ func Execute() error {
 	vault.AddCommand(InstallVaultCommand())
 	vault.AddCommand(UninstallVaultCommand())
 	boundary.AddCommand(InstallBoundaryCommand())
+	boundary.AddCommand(UninstallBoundaryCommand())
 
 	rootCmd.AddCommand(VersionCommand())
 	rootCmd.AddCommand(CompletionCommand())

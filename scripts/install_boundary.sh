@@ -2,17 +2,17 @@
 set -e
 
 info() {
-  echo '[INFO] ' "$@"
+  echo '[INFO] ->' "$@"
 }
 
 fatal() {
-  echo '[ERROR] ' "$@"
+  echo '[ERROR] ->' "$@"
   exit 1
 }
 
 verify_system() {
   if ! [ -d /run/systemd ]; then
-    fatal 'Can not find systemd to use as a process supervisor for boundary'
+    fatal 'Can not find systemd to use as a process supervisor for Boundary'
   fi
 }
 
@@ -79,7 +79,7 @@ install_dependencies() {
       elif $(has_yum); then
         $SUDO yum install -y curl unzip
       else
-        fatal "Could not find apt-get or yum. Cannot install dependencies on this OS."
+        fatal "Could not find apt-get or yum. Cannot install dependencies on this OS"
         exit 1
       fi
     fi
@@ -103,9 +103,9 @@ download_and_install() {
 
 create_user_and_config() {
   if $(id boundary >/dev/null 2>&1); then
-    info "User boundary already exists. Will not create again."
+    info "User 'boundary' already exists, will not create again"
   else
-    info "Creating user named boundary"
+    info "Creating user named 'boundary'"
     $SUDO useradd --system --home ${BOUNDARY_CONFIG_DIR} --shell /bin/false boundary
   fi
 
@@ -119,7 +119,7 @@ create_user_and_config() {
 
 # --- write systemd service file ---
 create_systemd_service_file() {
-  info "Creating service file ${BOUNDARY_SERVICE_FILE}"
+  info "Adding system service file ${BOUNDARY_SERVICE_FILE}"
   $SUDO tee ${BOUNDARY_SERVICE_FILE} >/dev/null <<EOF
 [Unit]
 Description=Boundary
@@ -150,7 +150,7 @@ init_database() {
 systemd_enable_and_start() {
   [ "${SKIP_ENABLE}" = true ] && return
 
-  info "Enabling boundary unit"
+  info "Enabling systemd service"
   $SUDO systemctl enable ${BOUNDARY_SERVICE_FILE} >/dev/null
   $SUDO systemctl daemon-reload >/dev/null
 
@@ -158,11 +158,11 @@ systemd_enable_and_start() {
 
   POST_INSTALL_HASHES=$(get_installed_hashes)
   if [ "${PRE_INSTALL_HASHES}" = "${POST_INSTALL_HASHES}" ]; then
-    info 'No change detected so skipping service start'
+    info "No change detected so skipping service start"
     return
   fi
 
-  info "Starting boundary"
+  info "Starting systemd service"
   $SUDO systemctl restart boundary
 
   return 0
